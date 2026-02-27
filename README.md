@@ -534,6 +534,12 @@ session tracking.
 **Step 1: Authenticate the WebSocket connection** in
 `app/channels/application_cable/connection.rb`:
 
+> **Important:** Warden middleware does not always run for WebSocket upgrade
+> requests, so `env["warden"]` may be `nil` even when the user is signed in.
+> The example below tries Warden first, then falls back to reading the user ID
+> from the encrypted session cookie. This cookie-based fallback is the
+> recommended approach for Devise.
+
 ```ruby
 module ApplicationCable
   class Connection < ActionCable::Connection::Base
@@ -546,11 +552,28 @@ module ApplicationCable
     private
 
     def find_verified_user
-      if (user = env["warden"].user)
+      if (user = env["warden"]&.user)
+        user
+      elsif (user = user_from_session)
         user
       else
         reject_unauthorized_connection
       end
+    end
+
+    # Warden middleware may not run for WebSocket
+    # upgrade requests. Read the user ID from the
+    # encrypted session cookie as a fallback.
+    def user_from_session
+      key = Rails.application
+        .config.session_options[:key]
+      data = cookies.encrypted[key]
+      return unless data
+
+      user_id = data.dig(
+        "warden.user.user.key", 0, 0
+      )
+      User.find_by(id: user_id) if user_id
     end
   end
 end

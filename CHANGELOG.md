@@ -42,3 +42,6 @@
   optional DOM elements are absent.
 - README: peer dependency table, copy-paste HTML
   snippet, SSH host key policy docs.
+- Devise integration: cookie-based fallback for
+  ActionCable auth when Warden middleware is not
+  available on WebSocket upgrades.

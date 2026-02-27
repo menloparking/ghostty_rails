@@ -31,6 +31,40 @@ module GhosttyRails
           create_file connection, <<~RUBY
             module ApplicationCable
               class Connection < ActionCable::Connection::Base
+                identified_by :current_user
+
+                def connect
+                  self.current_user = find_verified_user
+                end
+
+                private
+
+                # Warden middleware may not run for
+                # WebSocket upgrade requests. When
+                # env["warden"] is nil, fall back to
+                # reading the user ID from the encrypted
+                # session cookie.
+                def find_verified_user
+                  if (user = env["warden"]&.user)
+                    user
+                  elsif (user = user_from_session)
+                    user
+                  else
+                    reject_unauthorized_connection
+                  end
+                end
+
+                def user_from_session
+                  key = Rails.application
+                    .config.session_options[:key]
+                  data = cookies.encrypted[key]
+                  return unless data
+
+                  user_id = data.dig(
+                    "warden.user.user.key", 0, 0
+                  )
+                  User.find_by(id: user_id) if user_id
+                end
               end
             end
           RUBY
