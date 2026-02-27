@@ -20,11 +20,17 @@ const FULLSCREEN_CLASSES = [
 export default class TerminalFullscreenController
   extends Controller {
   static targets = [
-    "wrapper", "btn", "meta", "terminalWrap"
+    "wrapper", "btn",
+    "maximizeIcon", "minimizeIcon",
+    "meta", "terminalWrap"
   ]
 
   declare wrapperTarget: HTMLElement
   declare btnTarget: HTMLElement
+  declare hasMaximizeIconTarget: boolean
+  declare maximizeIconTarget: HTMLElement
+  declare hasMinimizeIconTarget: boolean
+  declare minimizeIconTarget: HTMLElement
   declare hasMetaTarget: boolean
   declare metaTarget: HTMLElement
   declare hasTerminalWrapTarget: boolean
@@ -39,6 +45,12 @@ export default class TerminalFullscreenController
     Record<string, string> = {}
   private savedTerminalClasses: string[] = []
   private savedBodyOverflow = ""
+
+  connect () {
+    // Set initial icon visibility so the
+    // minimize icon is hidden on mount
+    this.setButtonLabel("maximize")
+  }
 
   toggle () {
     if (this.isFullscreen) {
@@ -194,11 +206,13 @@ export default class TerminalFullscreenController
     })
   }
 
-  // Update the button's accessible label.
-  // The consuming app is responsible for icon
-  // rendering (Lucide, SVG, etc). This sets
-  // data-action-label so apps can react to
-  // the state change.
+  // Update the button's accessible label and
+  // toggle icon targets when present. The app
+  // provides the icon content (Lucide SVGs,
+  // Font Awesome, emoji, etc.) inside elements
+  // marked as maximizeIcon and minimizeIcon
+  // targets. The controller simply toggles their
+  // visibility.
   private setButtonLabel (name: string) {
     this.btnTarget.setAttribute(
       "data-fullscreen-state", name
@@ -209,5 +223,14 @@ export default class TerminalFullscreenController
         ? "Exit fullscreen"
         : "Enter fullscreen"
     )
+
+    if (this.hasMaximizeIconTarget) {
+      this.maximizeIconTarget.hidden =
+        name === "minimize"
+    }
+    if (this.hasMinimizeIconTarget) {
+      this.minimizeIconTarget.hidden =
+        name === "maximize"
+    }
   }
 }
