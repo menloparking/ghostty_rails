@@ -21,6 +21,16 @@ and SSH identity resolution.
   - [SSH mode](#ssh-mode)
 - [Configuration](#configuration)
 - [Authorization](#authorization)
+- [Rate Limiting](#rate-limiting)
+- [Session Management](#session-management)
+  - [Querying sessions](#querying-sessions)
+  - [Killing sessions](#killing-sessions)
+  - [Per-user session caps](#per-user-session-caps)
+- [I/O Recording and Session Hooks](#io-recording-and-session-hooks)
+  - [Session lifecycle hooks](#session-lifecycle-hooks)
+  - [Input and output hooks](#input-and-output-hooks)
+  - [Recording example](#recording-example)
+- [Devise Integration](#devise-integration)
 - [SSH Identity Resolution](#ssh-identity-resolution)
 - [Stimulus Controllers](#stimulus-controllers)
   - [TerminalController](#terminalcontroller)
@@ -183,6 +193,26 @@ GhosttyRails.configure do |config|
   # client-side terminal).
   # Default: 10_000
   config.scrollback = 10_000
+
+  # Maximum concurrent terminal sessions across
+  # the entire process. nil means unlimited.
+  # Default: nil
+  config.max_sessions = nil
+
+  # Maximum new sessions per user within the
+  # rate_limit_period window. nil means no limit.
+  # Default: nil
+  config.rate_limit = 5
+
+  # Sliding window in seconds for rate limiting.
+  # Default: 60
+  config.rate_limit_period = 60
+
+  # When true (the default), the base channel
+  # rejects subscriptions in production unless
+  # authorize_terminal! is overridden.
+  # Default: true
+  config.require_explicit_authorization = true
 end
 ```
 
@@ -222,6 +252,265 @@ end
 Connection-level authentication (who the WebSocket user is) is handled by your
 `ApplicationCable::Connection` as usual. The `authorize_terminal!` hook is for
 channel-level authorization (whether that user is allowed to open a terminal).
+
+## Rate Limiting
+
+GhosttyRails can rate-limit new session creation per user to prevent abuse. Rate
+limiting uses a sliding window algorithm keyed by
+[`connection_identifier`](#devise-integration).
+
+Configure in your initializer:
+
+```ruby
+GhosttyRails.configure do |config|
+  # Max 5 new sessions per 60-second window.
+  # nil (default) means no rate limiting.
+  config.rate_limit = 5
+  config.rate_limit_period = 60  # seconds
+end
+```
+
+When a user exceeds the limit, the subscription is rejected. The channel raises
+`GhosttyRails::RateLimitedError` internally, which you do not need to rescue --
+the base channel handles it.
+
+**Custom rate limit keys:** By default, rate limits are keyed by
+`connection_identifier` (per-user). Override `rate_limit_key` in your channel
+subclass if you want a different grouping (e.g., per-IP):
+
+```ruby
+class TerminalChannel < GhosttyRails::TerminalChannel
+  private
+
+  def rate_limit_key
+    request.remote_ip
+  end
+end
+```
+
+## Session Management
+
+GhosttyRails maintains a thread-safe, in-process registry of all active terminal
+sessions. Use these class methods on your channel (or the base
+`GhosttyRails::TerminalChannel`) to inspect and control sessions.
+
+### Querying sessions
+
+```ruby
+# All active sessions (frozen hash of session_id => info)
+GhosttyRails::TerminalChannel.active_sessions
+
+# Total count
+GhosttyRails::TerminalChannel.session_count
+
+# Look up a single session by UUID
+GhosttyRails::TerminalChannel.find_session(
+  "abc-123-..."
+)
+# => { session_id:, mode:, pid:, started_at:,
+#      connection_identifier:, channel: }
+# or nil
+
+# Sessions for a specific user
+GhosttyRails::TerminalChannel.sessions_for(
+  "user_42"
+)
+
+# Count for a specific user
+GhosttyRails::TerminalChannel.session_count_for(
+  "user_42"
+)
+```
+
+Each session hash contains:
+
+| Key | Type | Description |
+| --- | --- | --- |
+| `session_id` | String | UUID for this session |
+| `mode` | String | `"local"` or `"ssh"` |
+| `pid` | Integer | OS process ID of the PTY child |
+| `started_at` | Time | When the session was created |
+| `connection_identifier` | String | The user key (see [Devise Integration](#devise-integration)) |
+| `channel` | Object | The channel instance (for internal use) |
+
+### Killing sessions
+
+```ruby
+# Kill one session by id (returns true/false)
+GhosttyRails::TerminalChannel.force_disconnect(
+  "abc-123-..."
+)
+
+# Kill all sessions (returns count killed)
+GhosttyRails::TerminalChannel.force_disconnect_all
+```
+
+Both methods trigger the full teardown sequence (SIGTERM, grace period, SIGKILL)
+and call `on_session_end`.
+
+### Per-user session caps
+
+There is no built-in per-user cap setting because the right limit depends on your
+application. Instead, enforce it in `authorize_terminal!`:
+
+```ruby
+class TerminalChannel < GhosttyRails::TerminalChannel
+  MAX_TERMINALS_PER_USER = 3
+
+  private
+
+  def authorize_terminal!(params)
+    unless current_user
+      raise GhosttyRails::UnauthorizedError
+    end
+
+    if self.class.session_count_for(
+         connection_identifier
+       ) >= MAX_TERMINALS_PER_USER
+      raise GhosttyRails::UnauthorizedError,
+        "too many open terminals"
+    end
+  end
+
+  def connection_identifier
+    current_user.id.to_s
+  end
+end
+```
+
+A global cap across all users is available via `config.max_sessions`:
+
+```ruby
+GhosttyRails.configure do |config|
+  config.max_sessions = 50  # nil = unlimited
+end
+```
+
+## I/O Recording and Session Hooks
+
+GhosttyRails provides hooks at every stage of a session's lifecycle for audit
+logging, recording, and monitoring. All hooks are no-ops by default -- override
+them in your channel subclass.
+
+### Session lifecycle hooks
+
+| Hook | When it runs | Available data |
+| --- | --- | --- |
+| `on_session_start` | After PTY spawn and registration | `session_id`, `params`, `connection` |
+| `on_session_end` | Before deregistration and PTY cleanup | `session_id`, `params`, `connection` |
+
+### Input and output hooks
+
+| Hook | When it runs | Arguments |
+| --- | --- | --- |
+| `on_input(data, params)` | Before data is written to the PTY | Raw input string, subscription params |
+| `on_output(data, params)` | Before data is sent to the browser | Raw output string, subscription params |
+
+Both I/O hooks run in hot paths -- `on_input` inside the receive mutex, and
+`on_output` inside the reader thread. Keep them fast or offload to a background
+job.
+
+### Recording example
+
+```ruby
+class TerminalChannel < GhosttyRails::TerminalChannel
+  private
+
+  def on_session_start
+    TerminalRecording.create!(
+      session_id: session_id,
+      user: current_user,
+      started_at: Time.current
+    )
+  end
+
+  def on_session_end
+    recording = TerminalRecording.find_by(
+      session_id: session_id
+    )
+    recording&.update!(ended_at: Time.current)
+  end
+
+  def on_input(data, _params)
+    TerminalEvent.create!(
+      session_id: session_id,
+      direction: :input,
+      data: data,
+      recorded_at: Time.current
+    )
+  end
+
+  def on_output(data, _params)
+    TerminalEvent.create!(
+      session_id: session_id,
+      direction: :output,
+      data: data,
+      recorded_at: Time.current
+    )
+  end
+end
+```
+
+The `session_id` accessor is public, so you can use it in all hooks and callbacks
+to correlate events.
+
+## Devise Integration
+
+GhosttyRails does **not** depend on Devise, but it integrates naturally with any
+authentication system. The key integration point is `connection_identifier` -- a
+method that returns a string identifying the current user for rate limiting and
+session tracking.
+
+**Step 1: Authenticate the WebSocket connection** in
+`app/channels/application_cable/connection.rb`:
+
+```ruby
+module ApplicationCable
+  class Connection < ActionCable::Connection::Base
+    identified_by :current_user
+
+    def connect
+      self.current_user = find_verified_user
+    end
+
+    private
+
+    def find_verified_user
+      if (user = env["warden"].user)
+        user
+      else
+        reject_unauthorized_connection
+      end
+    end
+  end
+end
+```
+
+**Step 2: Override `connection_identifier` and `authorize_terminal!`** in your
+channel subclass:
+
+```ruby
+class TerminalChannel < GhosttyRails::TerminalChannel
+  private
+
+  def authorize_terminal!(params)
+    unless current_user&.admin?
+      raise GhosttyRails::UnauthorizedError
+    end
+  end
+
+  # Key rate limiting and session tracking by
+  # Devise user id instead of the default
+  # ActionCable connection_identifier.
+  def connection_identifier
+    current_user.id.to_s
+  end
+end
+```
+
+With this setup, `sessions_for`, `session_count_for`, rate limiting, and per-user
+session caps all key on your Devise user id. No Devise-specific code exists in
+the gem itself.
 
 ## SSH Identity Resolution
 
@@ -558,16 +847,16 @@ In production, the number of concurrent sessions is bounded by:
 - The server's process limit (`ulimit -u`)
 - Available memory for the Ruby threads and child processes
 
-There is no built-in session limit in GhosttyRails. If you need to cap
-concurrent terminals, enforce it in your `authorize_terminal!` hook:
+GhosttyRails provides several layers of session control:
 
-```ruby
-def authorize_terminal!(params)
-  if TerminalSession.active.count >= MAX_TERMINALS
-    raise GhosttyRails::UnauthorizedError
-  end
-end
-```
+- **Global cap:** `config.max_sessions` limits total concurrent sessions across
+  all users (default: `nil` / unlimited).
+- **Per-user caps:** Use `session_count_for` in `authorize_terminal!` to enforce
+  per-user limits. See [Per-user session caps](#per-user-session-caps).
+- **Rate limiting:** `config.rate_limit` and `config.rate_limit_period` throttle
+  new session creation. See [Rate Limiting](#rate-limiting).
+- **Session management:** Query and kill sessions programmatically. See
+  [Session Management](#session-management).
 
 ## Platform Support
 
