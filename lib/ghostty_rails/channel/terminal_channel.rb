@@ -556,8 +556,8 @@ module GhosttyRails
       # user actually connecting is the same one
       # that was authorized.
       resolved = resolved_ssh
-      user = params[:ssh_user].to_s.strip
-      user = resolved[:user] || 'root' if user.empty?
+      user = effective_ssh_user
+      user = 'root' if user.empty?
 
       cmd = [
         'ssh', '-tt',
@@ -650,20 +650,45 @@ module GhosttyRails
       local_mode? || valid_ssh_params?
     end
 
+    # Allowlist: hostnames, IPv4, IPv6 (bracketed
+    # or bare), and simple patterns like
+    # "host.example.com" or "10.0.0.1".
+    VALID_SSH_HOST = /\A[a-zA-Z0-9.\-:\[\]]+\z/
+    private_constant :VALID_SSH_HOST
+
+    # Allowlist for SSH usernames. Permits
+    # alphanumerics, dots, hyphens, underscores.
+    VALID_SSH_USER = /\A[a-zA-Z0-9._-]+\z/
+    private_constant :VALID_SSH_USER
+
     def valid_ssh_params?
       host = params[:ssh_host].to_s.strip
       return false if host.empty?
-      return false if host.include?(' ')
-      return false if host.include?(';')
-      return false if host.include?('|')
-      return false if host.include?('&')
-      return false if host.include?('`')
+      return false unless VALID_SSH_HOST.match?(host)
+
+      user = effective_ssh_user
+      if !user.empty? && !VALID_SSH_USER
+         .match?(user)
+        return false
+      end
 
       auth = params[:ssh_auth_method].to_s
       return false unless ALLOWED_AUTH_METHODS
                           .include?(auth)
 
       true
+    end
+
+    # Returns the SSH user that will actually be
+    # used, after considering param and resolved
+    # values. Empty string when no user is set
+    # (will default to 'root' later in
+    # ssh_command).
+    def effective_ssh_user
+      user = params[:ssh_user].to_s.strip
+      return user unless user.empty?
+
+      resolved_ssh[:user].to_s.strip
     end
 
     def wait_for_exit(pid, timeout)
