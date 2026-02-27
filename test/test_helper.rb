@@ -1,14 +1,8 @@
-require 'minitest/autorun'
-require 'action_cable'
-require 'action_cable/channel/test_case'
-require 'ghostty_rails'
+# Boot the dummy Rails app so ActionCable's test
+# infrastructure has a proper pubsub adapter config
+# (cable.yml adapter: async).
+ENV["RAILS_ENV"] = "test"
+require_relative "dummy/config/environment"
 
-# Minimal Rails.logger for tests
-unless defined?(Rails)
-  module Rails
-    def self.logger
-      @logger ||= Logger.new($stdout,
-                             level: Logger::WARN)
-    end
-  end
-end
+require "rails/test_help"
+require "action_cable/channel/test_case"

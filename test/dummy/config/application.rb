@@ -5,11 +5,13 @@ require "action_cable/engine"
 require "active_job/railtie"
 require "rails/test_unit/railtie"
 
+Bundler.require(*Rails.groups)
+
 module Dummy
   class Application < Rails::Application
     config.load_defaults 8.0
     config.eager_load = false
-    config.serve_static_files = true
+    config.public_file_server.enabled = true
     config.secret_key_base = "test-secret-" \
       "ghostty-rails-dummy-app-key-base"
     config.hosts << "127.0.0.1"
