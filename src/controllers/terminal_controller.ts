@@ -71,10 +71,15 @@ export default class TerminalController
   declare hasAuthMethodTarget: boolean
   declare hasConnectBtnTarget: boolean
   declare hasConnectionFormTarget: boolean
+  declare hasContainerTarget: boolean
+  declare hasContentTarget: boolean
+  declare hasDisconnectBtnTarget: boolean
   declare hasHostTarget: boolean
+  declare hasPageTarget: boolean
   declare hasPasswordTarget: boolean
   declare hasPasswordGroupTarget: boolean
   declare hasPortTarget: boolean
+  declare hasStatusTarget: boolean
   declare hasSubtitleActionsTarget: boolean
   declare hasUserTarget: boolean
 
@@ -106,6 +111,8 @@ export default class TerminalController
 
   disconnect () {
     this.teardownSession()
+    this.consumer?.disconnect()
+    this.consumer = null
   }
 
   // -- Actions ------------------------------------
@@ -229,6 +236,13 @@ export default class TerminalController
               "\r\n\x1b[31m[Disconnected]" +
               "\x1b[0m\r\n"
             )
+            if (this.hasConnectBtnTarget) {
+              this.connectBtnTarget.disabled =
+                false
+            }
+            if (this.hasConnectionFormTarget) {
+              this.showForm()
+            }
           },
 
           rejected: () => {
@@ -364,18 +378,26 @@ export default class TerminalController
     color: string | null
   ) {
     if (color) {
-      this.pageTarget.style.backgroundColor =
-        color
-      this.contentTarget
-        .classList.remove("bg-background")
-      this.contentTarget.style.backgroundColor =
-        color
+      if (this.hasPageTarget) {
+        this.pageTarget.style.backgroundColor =
+          color
+      }
+      if (this.hasContentTarget) {
+        this.contentTarget
+          .classList.remove("bg-background")
+        this.contentTarget.style.backgroundColor =
+          color
+      }
     } else {
-      this.pageTarget.style.backgroundColor = ""
-      this.contentTarget
-        .classList.add("bg-background")
-      this.contentTarget.style.backgroundColor =
-        ""
+      if (this.hasPageTarget) {
+        this.pageTarget.style.backgroundColor = ""
+      }
+      if (this.hasContentTarget) {
+        this.contentTarget
+          .classList.add("bg-background")
+        this.contentTarget.style.backgroundColor =
+          ""
+      }
     }
   }
 
@@ -383,6 +405,7 @@ export default class TerminalController
     msg: string,
     isError = false
   ) {
+    if (!this.hasStatusTarget) return
     this.statusTarget.textContent = msg
     this.statusTarget.className = isError
       ? "text-sm text-danger"
@@ -390,7 +413,9 @@ export default class TerminalController
   }
 
   private showForm () {
-    this.containerTarget.classList.add("hidden")
+    if (this.hasContainerTarget) {
+      this.containerTarget.classList.add("hidden")
+    }
     if (this.hasConnectionFormTarget) {
       this.connectionFormTarget
         .classList.remove("hidden")
@@ -402,8 +427,10 @@ export default class TerminalController
   }
 
   private showTerminal () {
-    this.containerTarget
-      .classList.remove("hidden")
+    if (this.hasContainerTarget) {
+      this.containerTarget
+        .classList.remove("hidden")
+    }
     if (this.hasConnectionFormTarget) {
       this.connectionFormTarget
         .classList.add("hidden")
