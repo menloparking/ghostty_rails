@@ -88,12 +88,28 @@ bundle install
 yarn add ghostty-rails
 ```
 
-The npm package has the following peer dependencies, which your application must
-provide:
+> **Note:** The npm package is not yet published to the registry. In the
+> meantime, the gem ships a pre-built `dist/` directory. Install from the
+> local gem path instead:
+>
+> ```sh
+> gem_path=$(bundle show ghostty_rails)
+> yarn add "file:$gem_path"
+> ```
 
-- `@hotwired/stimulus` >= 3.0.0
-- `@rails/actioncable` >= 7.0.0
-- `ghostty-web` >= 0.4.0
+**Peer dependencies** -- your application must provide these:
+
+| Package | Version |
+| --- | --- |
+| `@hotwired/stimulus` | >= 3.0.0 |
+| `@rails/actioncable` | >= 7.0.0 |
+| `ghostty-web` | >= 0.4.0 |
+
+Install them explicitly:
+
+```sh
+yarn add @hotwired/stimulus @rails/actioncable ghostty-web
+```
 
 ### Run the generator
 
@@ -107,6 +123,10 @@ This creates two files:
 | --- | --- |
 | `app/channels/terminal_channel.rb` | Your app's channel subclass with authorization stubs |
 | `config/initializers/ghostty_rails.rb` | Configuration block with commented defaults |
+
+If your app is missing ActionCable boilerplate (`application_cable/connection.rb`,
+`application_cable/channel.rb`, or `config/cable.yml`), the generator creates those
+too.
 
 ### Register Stimulus controllers
 
@@ -133,6 +153,55 @@ Stimulus.register(
 # config/routes.rb
 get "terminal", to: "terminals#show"
 ```
+
+### Minimal view
+
+Create `app/views/terminals/show.html.erb` (or an equivalent Phlex component)
+with all required Stimulus targets:
+
+```html
+<div data-controller="terminal terminal-fullscreen"
+     data-terminal-fullscreen-target="wrapper"
+     data-terminal-mode-value="local"
+     data-terminal-auto-connect-value="true"
+     data-action="
+       terminal-fullscreen:changed->terminal#refitTerminal
+       keydown->terminal-fullscreen#handleKeydown"
+     style="height: 600px;">
+
+  <div data-terminal-fullscreen-target="meta"
+       data-terminal-target="content"
+       style="display: flex; align-items: center;
+              justify-content: space-between;
+              margin-bottom: 1rem;">
+    <h1>Terminal</h1>
+    <div style="display: flex;
+                align-items: center; gap: 0.5rem;">
+      <span data-terminal-target="status"></span>
+      <button data-terminal-fullscreen-target="btn"
+              data-action="terminal-fullscreen#toggle"
+              aria-label="Enter fullscreen">
+        FS
+      </button>
+      <button data-terminal-target="disconnectBtn"
+              data-action="terminal#disconnectTerminal">
+        Disconnect
+      </button>
+    </div>
+  </div>
+
+  <div data-terminal-target="page">
+    <div data-terminal-target="container"
+         data-terminal-fullscreen-target="terminalWrap"
+         style="height: 100%; width: 100%;">
+    </div>
+  </div>
+</div>
+```
+
+All targets marked "Yes" in the [Stimulus Controllers](#stimulus-controllers)
+section must be present. Optional targets (forms, buttons) can be omitted -- the
+controllers guard against their absence.
 
 ## Modes
 
