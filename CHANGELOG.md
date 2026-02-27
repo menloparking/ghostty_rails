@@ -31,3 +31,14 @@
   fullscreen toggle.
 - Ten built-in color themes.
 - Rails generator for initial setup.
+- Generator creates ActionCable boilerplate
+  (connection, channel, cable.yml) if missing.
+- Generator moved to standard Rails path so
+  `bin/rails generate ghostty_rails:install` works.
+- Pre-built `dist/` shipped in gem so consumers
+  need no TypeScript build step.
+- Removed unused engine asset path initializer.
+- Stimulus target guards prevent crashes when
+  optional DOM elements are absent.
+- README: peer dependency table, copy-paste HTML
+  snippet, SSH host key policy docs.
