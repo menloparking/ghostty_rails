@@ -51,9 +51,6 @@ module GhosttyRails
     # Defaults to 60.
     attr_accessor :rate_limit_period
 
-    # Maximum scrollback buffer (sent to client).
-    attr_accessor :scrollback
-
     # TERM environment variable passed to the PTY.
     attr_accessor :term_env
 
@@ -64,7 +61,6 @@ module GhosttyRails
       @rate_limit = nil
       @rate_limit_period = 60
       @require_explicit_authorization = true
-      @scrollback = 10_000
       @term_env = 'xterm-256color'
     end
   end

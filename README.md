@@ -189,11 +189,6 @@ GhosttyRails.configure do |config|
   # Default: 3
   config.kill_escalation_wait = 3
 
-  # Maximum scrollback buffer lines (sent to the
-  # client-side terminal).
-  # Default: 10_000
-  config.scrollback = 10_000
-
   # Maximum concurrent terminal sessions across
   # the entire process. nil means unlimited.
   # Default: nil

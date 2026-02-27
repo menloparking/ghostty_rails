@@ -567,7 +567,6 @@ class TerminalChannelTest <
     assert_equal 'xterm-256color',
                  config.term_env
     assert_equal 3, config.kill_escalation_wait
-    assert_equal 10_000, config.scrollback
     assert config.require_explicit_authorization
     assert_nil config.max_sessions
   end
