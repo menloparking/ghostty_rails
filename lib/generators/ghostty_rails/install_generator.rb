@@ -10,6 +10,9 @@ module GhosttyRails
     #   app/channels/terminal_channel.rb
     #   config/initializers/ghostty_rails.rb
     #
+    # Also ensures ActionCable boilerplate files
+    # exist (connection.rb, channel.rb, cable.yml).
+    #
     # Prints post-install instructions for JS
     # setup, routes, and view integration.
     class InstallGenerator < Rails::Generators::Base
@@ -18,6 +21,52 @@ module GhosttyRails
       )
 
       desc 'Install GhosttyRails into your app'
+
+      def ensure_action_cable
+        connection = 'app/channels/' \
+          'application_cable/connection.rb'
+        unless File.exist?(
+          File.join(destination_root, connection)
+        )
+          create_file connection, <<~RUBY
+            module ApplicationCable
+              class Connection < ActionCable::Connection::Base
+              end
+            end
+          RUBY
+        end
+
+        channel = 'app/channels/' \
+          'application_cable/channel.rb'
+        unless File.exist?(
+          File.join(destination_root, channel)
+        )
+          create_file channel, <<~RUBY
+            module ApplicationCable
+              class Channel < ActionCable::Channel::Base
+              end
+            end
+          RUBY
+        end
+
+        cable_yml = 'config/cable.yml'
+        unless File.exist?(
+          File.join(destination_root, cable_yml)
+        )
+          create_file cable_yml, <<~YAML
+            development:
+              adapter: async
+
+            test:
+              adapter: test
+
+            production:
+              adapter: redis
+              url: <%= ENV.fetch("REDIS_URL") { "redis://localhost:6379/1" } %>
+              channel_prefix: <%= Rails.application.class.module_parent_name.underscore %>_production
+          YAML
+        end
+      end
 
       def create_channel
         template(
