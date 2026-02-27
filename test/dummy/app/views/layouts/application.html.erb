@@ -43,7 +43,7 @@
       .hover\:bg-gray-200:hover { background: #e5e7eb; }
     </style>
     <script type="module">
-      import { Application } from "https://unpkg.com/@hotwired/stimulus@3.2.2/dist/stimulus.js"
+      import { Application, Controller } from "https://unpkg.com/@hotwired/stimulus@3.2.2/dist/stimulus.js"
       import { createConsumer } from "https://unpkg.com/@rails/actioncable@8.0.200/src/index.js"
 
       // Minimal terminal stub for tests that don't
@@ -51,13 +51,7 @@
       // the real terminal should skip this stub.
       const Stimulus = Application.start()
 
-      // Stub terminal controller that renders a
-      // colored div instead of real Ghostty WASM.
-      // Sufficient for layout/positioning tests.
-      class TerminalController extends Stimulus.constructor {
-      }
-
-      Stimulus.register("terminal", class extends Application.constructor {
+      Stimulus.register("terminal", class extends Controller {
         static targets = [
           "authMethod", "connectBtn",
           "connectionForm", "container",
@@ -100,6 +94,137 @@
         }
 
         renderStubTerminal () {
+          // Tokyo Night palette used for the demo
+          const c = {
+            bg: "#1a1b26", fg: "#a9b1d6",
+            red: "#f7768e", green: "#9ece6a",
+            yellow: "#e0af68", blue: "#7aa2f7",
+            magenta: "#bb9af7", cyan: "#7dcfff",
+            white: "#c0caf5", dim: "#414868",
+            black: "#15161e",
+            bRed: "#f7768e", bGreen: "#9ece6a",
+            bYellow: "#e0af68", bBlue: "#7aa2f7",
+            bMagenta: "#bb9af7", bCyan: "#7dcfff",
+            bWhite: "#c0caf5", bBlack: "#414868"
+          }
+          const s = (color, text) =>
+            `<span style="color:${color}">${text}</span>`
+          const b = (color, text) =>
+            `<span style="color:${color};` +
+            `font-weight:bold">${text}</span>`
+
+          // Ghost ASCII art, colored column by column
+          // in a spectral gradient
+          const ghostLines = [
+            "     .-========-.     ",
+            "    //  @@  @@  \\\\    ",
+            "   ||            ||   ",
+            "   ||            ||   ",
+            "   ||    \\__/    ||   ",
+            "    \\\\          //    ",
+            "     \\\\ /\\\\ /\\\\ //     ",
+            "      \\/  \\/  \\/      "
+          ]
+          const ghostColors = [
+            c.blue, c.blue, c.cyan, c.cyan,
+            c.green, c.green, c.cyan, c.cyan,
+            c.green, c.green, c.yellow,
+            c.yellow, c.yellow, c.yellow,
+            c.green, c.green, c.cyan, c.cyan,
+            c.green, c.green, c.blue, c.blue
+          ]
+          const ghostArt = ghostLines.map(line => {
+            let out = ""
+            for (let i = 0; i < line.length; i++) {
+              const ch = line[i]
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+              const col = ghostColors[i] || c.fg
+              if (ch === "@") {
+                out += s(c.white, ch)
+              } else if (ch === " ") {
+                out += ch
+              } else {
+                out += s(col, ch)
+              }
+            }
+            return out
+          })
+
+          // System info lines beside the ghost
+          const info = [
+            b(c.blue, "ghostty") +
+              s(c.dim, "@") +
+              b(c.green, "rails"),
+            s(c.dim,
+              "----------------------"),
+            b(c.red, "Engine  ") +
+              s(c.fg,
+                "GhosttyRails v0.1.0"),
+            b(c.yellow, "Terminal") +
+              s(c.fg,
+                " Ghostty WASM"),
+            b(c.green, "Channel ") +
+              s(c.fg,
+                " ActionCable + PTY"),
+            b(c.cyan, "Modes   ") +
+              s(c.fg,
+                " Local | SSH"),
+            b(c.blue, "Themes  ") +
+              s(c.fg, " 10 built-in"),
+            b(c.magenta, "Ruby    ") +
+              s(c.fg, " >= 3.2") +
+              s(c.dim, " | ") +
+              b(c.magenta, "Rails") +
+              s(c.fg, " >= 7.1")
+          ]
+
+          // Compose ghost art + info side by side
+          const pad = "   "
+          const rows = Math.max(
+            ghostArt.length, info.length
+          )
+          let output = ""
+          for (let i = 0; i < rows; i++) {
+            const left = (i < ghostArt.length)
+              ? ghostArt[i] : " ".repeat(22)
+            const right = (i < info.length)
+              ? info[i] : ""
+            output += left + pad + right + "\n"
+          }
+
+          // Blank line then color swatches:
+          // normal colors, then bright colors
+          output += "\n"
+          const normal = [
+            c.black, c.red, c.green, c.yellow,
+            c.blue, c.magenta, c.cyan, c.white
+          ]
+          const bright = [
+            c.bBlack, c.bRed, c.bGreen,
+            c.bYellow, c.bBlue, c.bMagenta,
+            c.bCyan, c.bWhite
+          ]
+          // Three-line color blocks using
+          // background-colored spans
+          const block = "\u2588\u2588\u2588"
+          for (const palette of [normal, bright]) {
+            output += "  "
+            for (const color of palette) {
+              output +=
+                `<span style="color:${color}">` +
+                `${block}</span> `
+            }
+            output += "\n"
+          }
+
+          // Prompt
+          output += "\n"
+          output += s(c.green, "ghostty-rails") +
+            s(c.dim, " $ ") +
+            s(c.fg, "_")
+
           const el = document.createElement("div")
           el.setAttribute("data-stub-terminal", "true")
           el.style.cssText =
@@ -107,10 +232,12 @@
             "background:#1a1b26;" +
             "color:#a9b1d6;" +
             "font-family:monospace;" +
-            "font-size:14px;" +
-            "padding:8px;" +
-            "overflow:hidden;"
-          el.textContent = "ghostty-rails $ "
+            "font-size:13px;" +
+            "line-height:1.4;" +
+            "padding:12px 16px;" +
+            "overflow:hidden;" +
+            "white-space:pre;"
+          el.innerHTML = output
           this.containerTarget.appendChild(el)
 
           // Update page background like the
@@ -130,9 +257,11 @@
         }
       })
 
-      Stimulus.register("terminal-fullscreen", class extends Application.constructor {
+      Stimulus.register("terminal-fullscreen", class extends Controller {
         static targets = [
-          "wrapper", "btn", "meta", "terminalWrap"
+          "wrapper", "btn",
+          "maximizeIcon", "minimizeIcon",
+          "meta", "terminalWrap"
         ]
 
         FULLSCREEN_CLASSES = [
@@ -148,6 +277,10 @@
         savedTerminalStyles = {}
         savedTerminalClasses = []
         savedBodyOverflow = ""
+
+        connect () {
+          this.setButtonLabel("maximize")
+        }
 
         toggle () {
           if (this.isFullscreen) {
@@ -197,8 +330,7 @@
             tw.classList.add("flex-1", "min-h-0")
           }
 
-          this.btnTarget.setAttribute("data-fullscreen-state", "minimize")
-          this.btnTarget.setAttribute("aria-label", "Exit fullscreen")
+          this.setButtonLabel("minimize")
           this.isFullscreen = true
           this.dispatch("changed", { detail: { fullscreen: true } })
         }
@@ -225,11 +357,30 @@
             tw.style.width = this.savedTerminalStyles.width || ""
           }
 
-          this.btnTarget.setAttribute("data-fullscreen-state", "maximize")
-          this.btnTarget.setAttribute("aria-label", "Enter fullscreen")
+          this.setButtonLabel("maximize")
           this.isFullscreen = false
           window.scrollTo(0, 0)
           this.dispatch("changed", { detail: { fullscreen: false } })
+        }
+
+        setButtonLabel (name) {
+          this.btnTarget.setAttribute(
+            "data-fullscreen-state", name
+          )
+          this.btnTarget.setAttribute(
+            "aria-label",
+            name === "minimize"
+              ? "Exit fullscreen"
+              : "Enter fullscreen"
+          )
+          if (this.hasMaximizeIconTarget) {
+            this.maximizeIconTarget.hidden =
+              name === "minimize"
+          }
+          if (this.hasMinimizeIconTarget) {
+            this.minimizeIconTarget.hidden =
+              name === "maximize"
+          }
         }
       })
     </script>
