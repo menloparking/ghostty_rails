@@ -213,6 +213,8 @@ module GhosttyRails
         case data['type']
         when 'input'
           input = data['data']
+          return unless input
+
           on_input(input, params)
           @shell_write.write(input)
         when 'resize'
@@ -256,6 +258,7 @@ module GhosttyRails
 
       start_shell
       register_self
+      @registered = true
       on_session_start
     rescue GhosttyRails::UnauthorizedError
       reject
@@ -264,8 +267,14 @@ module GhosttyRails
     end
 
     def unsubscribed
-      on_session_end
-      deregister_self
+      # Guard: if the subscription was rejected
+      # before registration, skip session-end
+      # hooks and deregistration. stop_shell is
+      # still safe to call (it tolerates nil).
+      if @registered
+        on_session_end
+        deregister_self
+      end
       stop_shell
     end
 
@@ -456,7 +465,7 @@ module GhosttyRails
 
         begin
           data = readable.read_nonblock(4096)
-          data.force_encoding('UTF-8')
+          data.force_encoding('UTF-8').scrub!
           on_output(data, params)
           transmit({ type: 'output', data: data })
         rescue IO::WaitReadable
@@ -603,6 +612,11 @@ module GhosttyRails
         )
 
       @reader_thread = Thread.new { read_loop }
+    rescue Errno::ENOENT, Errno::EACCES => e
+      log_warn(
+        "PTY.spawn failed: #{e.message}"
+      )
+      reject
     end
 
     def stop_shell
@@ -610,6 +624,11 @@ module GhosttyRails
 
       @reader_thread&.join(READER_JOIN_TIMEOUT)
       @reader_thread = nil
+
+      # @mutex may be nil if subscribed was never
+      # called or was rejected before initialization
+      # completed.
+      return unless @mutex
 
       @mutex.synchronize do
         close_shell_io
