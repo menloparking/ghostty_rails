@@ -1121,4 +1121,274 @@ class TerminalChannelTest <
     assert_operator GhosttyRails::RateLimitedError,
                     :<, StandardError
   end
+
+  # -- SSH host allowlist (Commit 1) -----------------
+
+  test 'rejects ssh host with dollar-paren ' \
+    'injection' do
+    subscribe(
+      mode: 'ssh',
+      ssh_host: '$(whoami)',
+      ssh_auth_method: 'key'
+    )
+    assert subscription.rejected?
+  end
+
+  test 'rejects ssh host with newline' do
+    subscribe(
+      mode: 'ssh',
+      ssh_host: "host\nid",
+      ssh_auth_method: 'key'
+    )
+    assert subscription.rejected?
+  end
+
+  test 'rejects ssh host with curly braces' do
+    subscribe(
+      mode: 'ssh',
+      ssh_host: '{bad}',
+      ssh_auth_method: 'key'
+    )
+    assert subscription.rejected?
+  end
+
+  test 'accepts valid hostname' do
+    subscribe(
+      mode: 'ssh',
+      ssh_host: 'web-01.example.com',
+      ssh_auth_method: 'key'
+    )
+    refute subscription.rejected?
+  end
+
+  test 'accepts IPv4 address' do
+    subscribe(
+      mode: 'ssh',
+      ssh_host: '192.168.1.1',
+      ssh_auth_method: 'key'
+    )
+    refute subscription.rejected?
+  end
+
+  test 'accepts IPv6 address' do
+    subscribe(
+      mode: 'ssh',
+      ssh_host: '::1',
+      ssh_auth_method: 'key'
+    )
+    refute subscription.rejected?
+  end
+
+  # -- SSH user validation (Commit 1) ----------------
+
+  test 'rejects ssh user with semicolon' do
+    subscribe(
+      mode: 'ssh',
+      ssh_host: '10.0.0.1',
+      ssh_user: 'root;rm -rf /',
+      ssh_auth_method: 'key'
+    )
+    assert subscription.rejected?
+  end
+
+  test 'rejects ssh user with backtick' do
+    subscribe(
+      mode: 'ssh',
+      ssh_host: '10.0.0.1',
+      ssh_user: '`whoami`',
+      ssh_auth_method: 'key'
+    )
+    assert subscription.rejected?
+  end
+
+  test 'rejects ssh user with space' do
+    subscribe(
+      mode: 'ssh',
+      ssh_host: '10.0.0.1',
+      ssh_user: 'bad user',
+      ssh_auth_method: 'key'
+    )
+    assert subscription.rejected?
+  end
+
+  test 'accepts valid ssh user' do
+    subscribe(
+      mode: 'ssh',
+      ssh_host: '10.0.0.1',
+      ssh_user: 'deploy_v2',
+      ssh_auth_method: 'key'
+    )
+    refute subscription.rejected?
+  end
+
+  test 'accepts empty ssh user (defaults later)' do
+    subscribe(
+      mode: 'ssh',
+      ssh_host: '10.0.0.1',
+      ssh_user: '',
+      ssh_auth_method: 'key'
+    )
+    refute subscription.rejected?
+  end
+
+  # -- effective_ssh_user (Commit 1) -----------------
+
+  test 'effective_ssh_user prefers param over ' \
+    'resolved' do
+    resolving = Class.new(
+      GhosttyRails::TerminalChannel
+    ) do
+      def authorize_terminal!(_params); end
+
+      def resolve_ssh_params(_params)
+        { user: 'resolved_user' }
+      end
+    end
+
+    self.class.tests resolving
+    subscribe(
+      mode: 'ssh',
+      ssh_host: '10.0.0.1',
+      ssh_user: 'param_user',
+      ssh_auth_method: 'key'
+    )
+    refute subscription.rejected?
+    assert_equal 'param_user',
+                 subscription.send(
+                   :effective_ssh_user
+                 )
+  ensure
+    resolving.instance_variable_get(:@sessions)
+             &.clear
+    self.class.tests(
+      GhosttyRails::TerminalChannel
+    )
+  end
+
+  test 'effective_ssh_user falls back to ' \
+    'resolved' do
+    resolving = Class.new(
+      GhosttyRails::TerminalChannel
+    ) do
+      def authorize_terminal!(_params); end
+
+      def resolve_ssh_params(_params)
+        { user: 'resolved_user' }
+      end
+    end
+
+    self.class.tests resolving
+    subscribe(
+      mode: 'ssh',
+      ssh_host: '10.0.0.1',
+      ssh_user: '',
+      ssh_auth_method: 'key'
+    )
+    refute subscription.rejected?
+    assert_equal 'resolved_user',
+                 subscription.send(
+                   :effective_ssh_user
+                 )
+  ensure
+    resolving.instance_variable_get(:@sessions)
+             &.clear
+    self.class.tests(
+      GhosttyRails::TerminalChannel
+    )
+  end
+
+  # -- receive edge cases (Commit 2) -----------------
+
+  test 'receive with resize does not raise' do
+    subscribe(mode: 'local')
+    refute subscription.rejected?
+    # Should not raise
+    subscription.receive(
+      'type' => 'resize',
+      'cols' => 120,
+      'rows' => 40
+    )
+  end
+
+  test 'receive with unknown type does not ' \
+    'raise' do
+    subscribe(mode: 'local')
+    refute subscription.rejected?
+    # Unknown types are silently ignored
+    subscription.receive(
+      'type' => 'bogus',
+      'data' => 'whatever'
+    )
+  end
+
+  test 'receive with nil data does not crash' do
+    subscribe(mode: 'local')
+    refute subscription.rejected?
+    # data['data'] is nil -- should not raise
+    subscription.receive(
+      'type' => 'input',
+      'data' => nil
+    )
+  end
+
+  # -- on_session_end guard (Commit 2) ---------------
+
+  test 'on_session_end not called for rejected ' \
+    'subscription' do
+    ended = []
+    guarded = Class.new(
+      GhosttyRails::TerminalChannel
+    ) do
+      define_method(:on_session_end) do
+        ended << session_id
+      end
+
+      # Reject every subscription
+      def authorize_terminal!(_params)
+        raise GhosttyRails::UnauthorizedError
+      end
+    end
+
+    self.class.tests guarded
+    subscribe(mode: 'local')
+    assert subscription.rejected?
+
+    subscription.unsubscribe_from_channel
+    assert_empty ended,
+                 'on_session_end should not fire ' \
+                 'for a rejected subscription'
+  ensure
+    self.class.tests(
+      GhosttyRails::TerminalChannel
+    )
+  end
+
+  # -- on_session_start not called for rejected ------
+
+  test 'on_session_start not called for rejected ' \
+    'subscription' do
+    started = []
+    guarded = Class.new(
+      GhosttyRails::TerminalChannel
+    ) do
+      define_method(:on_session_start) do
+        started << session_id
+      end
+
+      def authorize_terminal!(_params)
+        raise GhosttyRails::UnauthorizedError
+      end
+    end
+
+    self.class.tests guarded
+    subscribe(mode: 'local')
+    assert subscription.rejected?
+    assert_empty started,
+                 'on_session_start should not fire ' \
+                 'for a rejected subscription'
+  ensure
+    self.class.tests(
+      GhosttyRails::TerminalChannel
+    )
+  end
 end
