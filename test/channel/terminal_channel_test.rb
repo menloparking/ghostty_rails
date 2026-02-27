@@ -429,6 +429,41 @@ class TerminalChannelTest <
     refute subscription.rejected?
   end
 
+  test 'max_sessions rejects at exact boundary' do
+    GhosttyRails.configuration.max_sessions = 2
+
+    subscribe(mode: 'local')
+    refute subscription.rejected?
+
+    subscribe(mode: 'local')
+    refute subscription.rejected?
+
+    # Third session hits the cap (count == max)
+    subscribe(mode: 'local')
+    assert subscription.rejected?
+  end
+
+  test 'max_sessions permits after unsubscribe ' \
+    'frees a slot' do
+    GhosttyRails.configuration.max_sessions = 1
+
+    subscribe(mode: 'local')
+    refute subscription.rejected?
+    first = subscription
+
+    # Second should be rejected (at cap)
+    subscribe(mode: 'local')
+    assert subscription.rejected?
+
+    # Disconnect the first session
+    first.unsubscribe_from_channel
+
+    # Now a new session should be permitted
+    subscribe(mode: 'local')
+    refute subscription.rejected?,
+           'should permit after a session disconnects'
+  end
+
   # -- on_input hook -------------------------------
 
   test 'on_input called before PTY write' do
@@ -470,6 +505,57 @@ class TerminalChannelTest <
       :on_output, 'data', {}
     )
     assert_nil result
+  end
+
+  test 'on_output called with PTY data' do
+    outputs = []
+    mutex = Mutex.new
+    hooking_channel = Class.new(
+      GhosttyRails::TerminalChannel
+    ) do
+      define_method(:on_output) do |data, _params|
+        mutex.synchronize { outputs << data }
+      end
+
+      def authorize_terminal!(_params)
+        # permit
+      end
+    end
+
+    self.class.tests hooking_channel
+    subscribe(mode: 'local')
+    refute subscription.rejected?
+
+    # Send input that produces output. The echo
+    # command writes to stdout which the read_loop
+    # thread picks up and passes to on_output.
+    subscription.receive(
+      'type' => 'input',
+      'data' => "echo ghostty_hook_test\n"
+    )
+
+    # Wait for the read thread to deliver output.
+    # PTY echo is fast but asynchronous; poll with
+    # a generous timeout to avoid flaky failures.
+    deadline = Time.now + 5
+    loop do
+      found = mutex.synchronize do
+        outputs.any? { |o| o.include?('ghostty_hook_test') }
+      end
+      break if found
+      break if Time.now > deadline
+
+      sleep 0.05
+    end
+
+    captured = mutex.synchronize { outputs.join }
+    assert_includes captured, 'ghostty_hook_test',
+                    'on_output should receive PTY data ' \
+                    'containing the echoed string'
+  ensure
+    self.class.tests(
+      GhosttyRails::TerminalChannel
+    )
   end
 
   # -- configuration -------------------------------
@@ -611,6 +697,44 @@ class TerminalChannelTest <
       :connection_identifier
     )
     assert_equal expected, key
+  end
+
+  test 'rate limit sliding window expires old events' do
+    GhosttyRails.configuration.rate_limit = 1
+    GhosttyRails.configuration.rate_limit_period = 1
+
+    subscribe(mode: 'local')
+    refute subscription.rejected?
+
+    # Second subscribe should be rejected (limit=1)
+    subscribe(mode: 'local')
+    assert subscription.rejected?
+
+    # Manually backdate the recorded timestamps so
+    # they fall outside the 1-second window. This
+    # avoids sleeping and keeps the test fast.
+    klass = GhosttyRails::TerminalChannel
+    mutex = klass.instance_variable_get(
+      :@rate_limits_mutex
+    )
+    limits = klass.instance_variable_get(
+      :@rate_limits
+    )
+    old_time = Process.clock_gettime(
+      Process::CLOCK_MONOTONIC
+    ) - 2.0
+
+    mutex.synchronize do
+      limits.each_key do |k|
+        limits[k] = [old_time]
+      end
+    end
+
+    # Now should be permitted again -- the old
+    # event is outside the sliding window.
+    subscribe(mode: 'local')
+    refute subscription.rejected?,
+           'should permit after rate limit window expires'
   end
 
   test 'custom rate_limit_key groups separately' do
