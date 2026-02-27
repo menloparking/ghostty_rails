@@ -10,8 +10,21 @@ class TerminalChannel <
     GhosttyRails::TerminalChannel
   private
 
-  # Raise GhosttyRails::UnauthorizedError to
-  # reject the subscription.
+  # REQUIRED: Implement authorization logic.
+  # In production, the default base implementation
+  # rejects all connections unless this method is
+  # overridden. Raise GhosttyRails::UnauthorizedError
+  # to reject the subscription.
+  #
+  # You can also enforce per-user session caps here
+  # using session_count_for:
+  #
+  #   if self.class.session_count_for(
+  #        current_user.id.to_s
+  #      ) >= 3
+  #     raise GhosttyRails::UnauthorizedError,
+  #       "too many open terminals"
+  #   end
   def authorize_terminal!(params)
     # Example:
     #   unless current_user.admin?
@@ -19,12 +32,65 @@ class TerminalChannel <
     #   end
   end
 
+  # Override to associate sessions with your user
+  # model. Used for per-user rate limiting,
+  # session_count_for, and sessions_for lookups.
+  # Defaults to ActionCable connection_identifier.
+  #
+  # def connection_identifier
+  #   current_user.id.to_s
+  # end
+
   # Return { identity:, user: } for SSH mode.
+  # This is called BEFORE authorize_terminal!,
+  # and the result is available via resolved_ssh.
   # def resolve_ssh_params(params)
   #   host = Host.find(params[:host_id])
   #   {
   #     identity: host.ssh_key_path,
   #     user: host.ssh_user
   #   }
+  # end
+
+  # Optional: audit logging for terminal input.
+  # Runs inside the receive mutex -- keep fast.
+  # def on_input(data, params)
+  #   AuditLog.record(
+  #     :input,
+  #     session_id: session_id,
+  #     user: current_user,
+  #     data: data
+  #   )
+  # end
+
+  # Optional: audit logging for terminal output.
+  # Runs inside the reader thread -- keep fast.
+  # def on_output(data, params)
+  #   AuditLog.record(
+  #     :output,
+  #     session_id: session_id,
+  #     user: current_user,
+  #     data: data
+  #   )
+  # end
+
+  # Optional: called when a session starts.
+  # Use to initialize recording or notify
+  # observers.
+  # def on_session_start
+  #   TerminalRecording.create!(
+  #     session_id: session_id,
+  #     user: current_user,
+  #     started_at: Time.current
+  #   )
+  # end
+
+  # Optional: called when a session ends.
+  # Use to finalize recordings or flush logs.
+  # def on_session_end
+  #   recording = TerminalRecording.find_by(
+  #     session_id: session_id
+  #   )
+  #   recording&.update!(ended_at: Time.current)
   # end
 end

@@ -8,4 +8,28 @@ GhosttyRails.configure do |config|
   # Seconds to wait after SIGTERM before
   # escalating to SIGKILL.
   # config.kill_escalation_wait = 3
+
+  # When true (the default), the base channel
+  # rejects subscriptions in production unless
+  # authorize_terminal! is overridden. In
+  # development/test it logs a warning but permits.
+  # Set to false only if you have authentication
+  # enforced at the ActionCable connection level
+  # and want to allow all authenticated users.
+  # config.require_explicit_authorization = true
+
+  # Maximum concurrent terminal sessions across
+  # the entire process. nil means unlimited.
+  # config.max_sessions = nil
+
+  # Rate limit new session creation per user.
+  # nil means no rate limiting. Set to an integer
+  # to cap new sessions within the rate_limit_period
+  # window. Keyed by connection_identifier (override
+  # rate_limit_key in your channel subclass to
+  # customize).
+  # config.rate_limit = 5
+
+  # Sliding window in seconds for rate limiting.
+  # config.rate_limit_period = 60
 end
