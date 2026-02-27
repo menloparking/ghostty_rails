@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1">
+    <title>GhosttyRails Test</title>
+    <style>
+      *, *::before, *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: system-ui, sans-serif;
+        background: #f5f5f5;
+      }
+      .bg-background { background: #f5f5f5; }
+      .max-w-5xl { max-width: 64rem; }
+      .mx-auto { margin-left: auto; margin-right: auto; }
+      .p-4 { padding: 1rem; }
+      .p-1 { padding: 0.25rem; }
+      .mb-4 { margin-bottom: 1rem; }
+      .mb-2 { margin-bottom: 0.5rem; }
+      .flex { display: flex; }
+      .flex-col { flex-direction: column; }
+      .flex-1 { flex: 1 1 0%; }
+      .items-center { align-items: center; }
+      .justify-between { justify-content: space-between; }
+      .gap-2 { gap: 0.5rem; }
+      .text-xl { font-size: 1.25rem; }
+      .font-bold { font-weight: 700; }
+      .text-sm { font-size: 0.875rem; }
+      .text-danger { color: #dc2626; }
+      .text-text-muted { color: #6b7280; }
+      .rounded { border-radius: 0.25rem; }
+      .hidden { display: none !important; }
+      .fixed { position: fixed; }
+      .inset-0 { top:0; right:0; bottom:0; left:0; }
+      .z-50 { z-index: 50; }
+      .overflow-hidden { overflow: hidden; }
+      .min-h-0 { min-height: 0; }
+      .hover\:bg-gray-200:hover { background: #e5e7eb; }
+    </style>
+    <script type="module">
+      import { Application } from "https://unpkg.com/@hotwired/stimulus@3.2.2/dist/stimulus.js"
+      import { createConsumer } from "https://unpkg.com/@rails/actioncable@8.0.200/src/index.js"
+
+      // Minimal terminal stub for tests that don't
+      // load the real Ghostty WASM. Tests that need
+      // the real terminal should skip this stub.
+      const Stimulus = Application.start()
+
+      // Stub terminal controller that renders a
+      // colored div instead of real Ghostty WASM.
+      // Sufficient for layout/positioning tests.
+      class TerminalController extends Stimulus.constructor {
+      }
+
+      Stimulus.register("terminal", class extends Application.constructor {
+        static targets = [
+          "authMethod", "connectBtn",
+          "connectionForm", "container",
+          "content", "disconnectBtn", "host",
+          "page", "password", "passwordGroup",
+          "port", "status", "subtitleActions",
+          "user"
+        ]
+
+        static values = {
+          autoConnect: { type: Boolean, default: false },
+          channelName: { type: String, default: "TerminalChannel" },
+          hostId: { type: String, default: "" },
+          mode: { type: String, default: "local" },
+          savedTheme: { type: String, default: "Tokyo Night" },
+          sshAuthMethod: { type: String, default: "key" },
+          sshHost: { type: String, default: "" },
+          sshPort: { type: String, default: "22" },
+          sshUser: { type: String, default: "root" }
+        }
+
+        connect () {
+          // For system tests: render a colored
+          // terminal-like surface immediately,
+          // simulating what Ghostty WASM would do.
+          if (this.autoConnectValue) {
+            this.renderStubTerminal()
+          }
+        }
+
+        refitTerminal () {
+          // Resize the stub surface to fill its
+          // container after fullscreen toggle
+          const stub = this.containerTarget
+            .querySelector("[data-stub-terminal]")
+          if (stub) {
+            stub.style.width = "100%"
+            stub.style.height = "100%"
+          }
+        }
+
+        renderStubTerminal () {
+          const el = document.createElement("div")
+          el.setAttribute("data-stub-terminal", "true")
+          el.style.cssText =
+            "width:100%;height:100%;" +
+            "background:#1a1b26;" +
+            "color:#a9b1d6;" +
+            "font-family:monospace;" +
+            "font-size:14px;" +
+            "padding:8px;" +
+            "overflow:hidden;"
+          el.textContent = "ghostty-rails $ "
+          this.containerTarget.appendChild(el)
+
+          // Update page background like the
+          // real controller does
+          const page = this.element.querySelector(
+            "[data-terminal-target='page']"
+          )
+          if (page) {
+            page.style.backgroundColor = "#1a1b26"
+          }
+          const content = this.element.querySelector(
+            "[data-terminal-target='content']"
+          )
+          if (content) {
+            content.style.backgroundColor = "#1a1b26"
+          }
+        }
+      })
+
+      Stimulus.register("terminal-fullscreen", class extends Application.constructor {
+        static targets = [
+          "wrapper", "btn", "meta", "terminalWrap"
+        ]
+
+        FULLSCREEN_CLASSES = [
+          "fixed", "inset-0", "z-50",
+          "bg-background", "p-4", "flex",
+          "flex-col", "overflow-hidden"
+        ]
+
+        isFullscreen = false
+        savedClasses = []
+        savedStyles = {}
+        savedMetaClasses = []
+        savedTerminalStyles = {}
+        savedTerminalClasses = []
+        savedBodyOverflow = ""
+
+        toggle () {
+          if (this.isFullscreen) {
+            this.exitFullscreen()
+          } else {
+            this.enterFullscreen()
+          }
+        }
+
+        handleKeydown (event) {
+          if (event.key === "Escape" && this.isFullscreen) {
+            event.preventDefault()
+            this.exitFullscreen()
+          }
+        }
+
+        enterFullscreen () {
+          const el = this.wrapperTarget
+          this.savedStyles = {
+            height: el.style.height,
+            maxWidth: el.style.maxWidth,
+            overflow: el.style.overflow
+          }
+          this.savedClasses = Array.from(el.classList)
+          this.savedBodyOverflow = document.body.style.overflow
+          document.body.style.overflow = "hidden"
+          el.className = ""
+          el.classList.add(...this.FULLSCREEN_CLASSES)
+          el.style.height = "100vh"
+          el.style.maxWidth = ""
+
+          if (this.hasMetaTarget) {
+            this.savedMetaClasses = Array.from(this.metaTarget.classList)
+            this.metaTarget.classList.remove("mb-4")
+            this.metaTarget.classList.add("mb-2")
+          }
+
+          if (this.hasTerminalWrapTarget) {
+            const tw = this.terminalWrapTarget
+            this.savedTerminalStyles = {
+              height: tw.style.height,
+              width: tw.style.width
+            }
+            this.savedTerminalClasses = Array.from(tw.classList)
+            tw.style.height = ""
+            tw.style.width = ""
+            tw.classList.add("flex-1", "min-h-0")
+          }
+
+          this.btnTarget.setAttribute("data-fullscreen-state", "minimize")
+          this.btnTarget.setAttribute("aria-label", "Exit fullscreen")
+          this.isFullscreen = true
+          this.dispatch("changed", { detail: { fullscreen: true } })
+        }
+
+        exitFullscreen () {
+          const el = this.wrapperTarget
+          document.body.style.overflow = this.savedBodyOverflow
+          el.className = ""
+          this.savedClasses.forEach(c => el.classList.add(c))
+          el.style.height = this.savedStyles.height || ""
+          el.style.maxWidth = this.savedStyles.maxWidth || ""
+          el.style.overflow = this.savedStyles.overflow || ""
+
+          if (this.hasMetaTarget) {
+            this.metaTarget.className = ""
+            this.savedMetaClasses.forEach(c => this.metaTarget.classList.add(c))
+          }
+
+          if (this.hasTerminalWrapTarget) {
+            const tw = this.terminalWrapTarget
+            tw.className = ""
+            this.savedTerminalClasses.forEach(c => tw.classList.add(c))
+            tw.style.height = this.savedTerminalStyles.height || ""
+            tw.style.width = this.savedTerminalStyles.width || ""
+          }
+
+          this.btnTarget.setAttribute("data-fullscreen-state", "maximize")
+          this.btnTarget.setAttribute("aria-label", "Enter fullscreen")
+          this.isFullscreen = false
+          window.scrollTo(0, 0)
+          this.dispatch("changed", { detail: { fullscreen: false } })
+        }
+      })
+    </script>
+  </head>
+  <body>
+    <%= yield %>
+  </body>
+</html>

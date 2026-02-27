@@ -1,0 +1,11 @@
+GhosttyRails.configure do |config|
+  # Shell command for local terminal sessions.
+  # config.default_shell = ["bash", "--login"]
+
+  # TERM environment variable for PTY sessions.
+  # config.term_env = "xterm-256color"
+
+  # Seconds to wait after SIGTERM before
+  # escalating to SIGKILL.
+  # config.kill_escalation_wait = 3
+end

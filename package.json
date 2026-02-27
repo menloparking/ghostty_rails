@@ -1,0 +1,41 @@
+{
+  "name": "ghostty-rails",
+  "version": "0.1.0",
+  "description": "Stimulus controllers and themes for Ghostty terminal in Rails",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "peerDependencies": {
+    "@hotwired/stimulus": ">=3.0.0",
+    "@rails/actioncable": ">=7.0.0",
+    "ghostty-web": ">=0.4.0"
+  },
+  "devDependencies": {
+    "@hotwired/stimulus": "^3.2.2",
+    "@rails/actioncable": "^8.1.200",
+    "ghostty-web": "^0.4.0",
+    "typescript": "^5.9.3"
+  },
+  "keywords": [
+    "ghostty",
+    "terminal",
+    "rails",
+    "stimulus",
+    "actioncable",
+    "wasm"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/menloparking/ghostty_rails.git"
+  }
+}

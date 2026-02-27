@@ -1,0 +1,30 @@
+# Subclass the GhosttyRails channel and add your
+# own authorization logic. Override
+# authorize_terminal! to restrict who can open
+# terminal sessions.
+#
+# For SSH mode, override resolve_ssh_params to
+# return identity file paths and SSH users from
+# your domain models.
+class TerminalChannel <
+    GhosttyRails::TerminalChannel
+  private
+
+  # Raise GhosttyRails::UnauthorizedError to
+  # reject the subscription.
+  def authorize_terminal!(params)
+    # Example:
+    #   unless current_user.admin?
+    #     raise GhosttyRails::UnauthorizedError
+    #   end
+  end
+
+  # Return { identity:, user: } for SSH mode.
+  # def resolve_ssh_params(params)
+  #   host = Host.find(params[:host_id])
+  #   {
+  #     identity: host.ssh_key_path,
+  #     user: host.ssh_user
+  #   }
+  # end
+end
