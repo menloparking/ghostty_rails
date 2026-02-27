@@ -165,9 +165,15 @@ browser user interacts with the remote machine through the server as a relay.
 
 Supported auth methods: `key` (default) and `password`.
 
-SSH parameters are validated server-side. Hosts containing shell metacharacters
-(`;`, `|`, `&`, `` ` ``, spaces) are rejected to prevent command injection.
-Ports outside 1--65535 fall back to 22.
+SSH parameters are validated server-side with an allowlist regex — only
+alphanumeric hostnames, dots, hyphens, colons, and brackets are accepted.
+Usernames follow a similar allowlist (alphanumeric, `.`, `_`, `-`). Ports
+outside 1--65535 fall back to 22.
+
+The SSH command includes `-o StrictHostKeyChecking=accept-new`, which
+automatically accepts host keys the first time a host is seen but rejects
+connections if a previously stored key has changed. This avoids interactive
+prompts while still guarding against MITM attacks on known hosts.
 
 ## Configuration
 
@@ -920,7 +926,9 @@ class TerminalChannelTest <
   end
 
   test "rejects unauthorized users" do
-    stub_connection current_user: build(:guest)
+    stub_connection current_user: User.new(
+      role: :guest
+    )
     subscribe(mode: "local")
     assert subscription.rejected?
   end
